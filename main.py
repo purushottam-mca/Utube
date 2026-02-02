@@ -32,8 +32,11 @@ def main():
         print("Failed to fetch formats. Please check the URL and try again.")
         return
     
-    # Display formats
-    downloader.display_formats(formats)
+    # Display formats (returns the list shown)
+    top_formats = downloader.display_formats(formats)
+    if not top_formats:
+        print("Failed to prepare format list.")
+        return
     
     # Get user's format selection
     while True:
@@ -45,15 +48,16 @@ def main():
                 return
             
             format_idx = int(selection) - 1
-            
-            if 0 <= format_idx < len(formats):
-                selected_format = formats[format_idx]
+
+            if 0 <= format_idx < len(top_formats):
+                selected_format = top_formats[format_idx]
+                resolution = selected_format.get('resolution')
                 format_id = selected_format.get('format_id')
-                format_note = selected_format.get('format_note', 'Unknown')
-                print(f"\n✓ Selected format: {format_id} ({format_note})")
+                ext = selected_format.get('video_ext', 'mp4')
+                print(f"\n✓ Selected format: {resolution} ({ext})")
                 break
             else:
-                print(f"Invalid selection. Please enter a number between 1 and {len(formats)}.")
+                print(f"Invalid selection. Please enter a number between 1 and {len(top_formats)}.")
         except ValueError:
             print("Invalid input. Please enter a valid number.")
     

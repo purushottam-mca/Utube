@@ -9,7 +9,6 @@ except ImportError:
     print("Error: yt-dlp is not installed. Install it using: pip install yt-dlp")
     exit(1)
 
-
 class YouTubeDownloader:
     """Privacy-focused YouTube video downloader using yt-dlp"""
     
@@ -49,26 +48,109 @@ class YouTubeDownloader:
         if not formats:
             print("No formats available")
             return
-        
-        print("\n" + "="*80)
-        print("Available Formats:")
+        # Build a map of resolution -> best format for that resolution
+        candidates = []
+        for fmt in formats:
+            # only consider video-containing formats
+            if fmt.get('vcodec') == 'none':
+                continue
+
+            # resolution height (prefer numeric height key)
+            height = fmt.get('height')
+            if height is None:
+                # try to parse from format_note (e.g. "720p")
+                note = fmt.get('format_note') or ''
+                try:
+                    if note.endswith('p') and note[:-1].isdigit():
+                        height = int(note[:-1])
+                    else:
+                        # fallback: look for any digits
+                        import re
+                        m = re.search(r"(\d{3,4})p", note)
+                        height = int(m.group(1)) if m else -1
+                except Exception:
+                    height = -1
+
+            # file type (extension)
+            ext = fmt.get('ext', 'N/A')
+
+            # video codec
+            vcodec = (fmt.get('vcodec') or 'N/A').split('.')[0]
+
+            # filesize or approximation
+            filesize = fmt.get('filesize') or fmt.get('filesize_approx')
+
+            # total bitrate for heuristic (tbr may be None)
+            tbr = fmt.get('tbr') or 0
+
+            candidates.append({
+                'height': height if isinstance(height, int) else -1,
+                'fmt': fmt,
+                'ext': ext,
+                'vcodec': vcodec,
+                'filesize': filesize,
+                'tbr': tbr,
+                'has_audio': (fmt.get('acodec') != 'none')
+            })
+
+        # select best format per resolution: prefer formats that include audio, then higher tbr
+        best_by_height = {}
+        for c in candidates:
+            h = c['height']
+            cur = best_by_height.get(h)
+            if cur is None:
+                best_by_height[h] = c
+                continue
+
+            # prefer formats with audio
+            if not cur['has_audio'] and c['has_audio']:
+                best_by_height[h] = c
+            elif cur['has_audio'] == c['has_audio']:
+                # prefer mp4, then webm, then higher bitrate
+                priority = {'mp4': 2, 'webm': 1}
+                cur_pr = priority.get((cur.get('ext') or '').lower(), 0)
+                c_pr = priority.get((c.get('ext') or '').lower(), 0)
+                if c_pr > cur_pr:
+                    best_by_height[h] = c
+                elif c_pr == cur_pr:
+                    if (c['tbr'] or 0) > (cur['tbr'] or 0):
+                        best_by_height[h] = c
+
+        # build sorted list of best formats by descending resolution
+        best_list = sorted(best_by_height.values(), key=lambda x: (x['height'] or -1), reverse=True)
+
+        # limit to top 10 resolutions
+        top = best_list[:10]
+
+        # helper to format filesize
+        def human_size(n):
+            if not n or not isinstance(n, (int, float)):
+                return 'Unknown'
+            n = float(n)
+            for unit in ['B','KB','MB','GB','TB']:
+                if n < 1024.0:
+                    return f"{n:3.1f}{unit}"
+                n /= 1024.0
+            return f"{n:.1f}PB"
+
         print("="*80)
-        print(f"{'#':<4} {'Format ID':<12} {'Resolution':<12} {'Video Codec':<15} {'Audio Codec':<15}")
+        print(f"{'#':<4} {'Resolution':<12} {'Type':<8} {'Size':<10}")
         print("-"*80)
-        
-        for idx, fmt in enumerate(formats, 1):
-            format_id = fmt.get('format_id', 'N/A')
-            resolution = fmt.get('format_note', 'N/A')
-            vcodec = fmt.get('vcodec', 'N/A').split('.')[0]
-            acodec = fmt.get('acodec', 'N/A').split('.')[0]
-            
-            # Truncate long values
-            vcodec = vcodec[:14]
-            acodec = acodec[:14]
-            
-            print(f"{idx:<4} {format_id:<12} {resolution:<12} {vcodec:<15} {acodec:<15}")
-        
+
+        # prepare returned list of formats in display order
+        top_formats = []
+        for idx, c in enumerate(top, 1):
+            fmt = c['fmt']
+            resolution = f"{c['height']}p" if c['height'] and c['height'] > 0 else (fmt.get('format_note') or 'Unknown')
+            ext = c['ext']
+            size = human_size(c['filesize'])
+            print(f"{idx:<4} {resolution:<12} {ext:<8} {size:<10}")
+            top_formats.append(fmt)
+
         print("="*80 + "\n")
+
+        # return the list of format dicts shown (so caller can map selection)
+        return top_formats
     
     def download(self, url: str, format_id: str, output_path: str = None):
         """
