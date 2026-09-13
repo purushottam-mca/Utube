@@ -1,4 +1,4 @@
-# Utube - YouTube Video Downloader
+# Utube - YouTube Video Downloader on Command Line
 
 A simple, privacy-focused YouTube video downloader built with `yt-dlp`.
 
